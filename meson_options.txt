@@ -1,0 +1,4 @@
+# Copyright © 2022 Stephan Lachnit <stephanlachnit@debian.org>
+# SPDX-License-Identifier: MIT
+
+option('build_examples', type: 'boolean', value: false, description: 'build examples')
