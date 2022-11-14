@@ -1,3 +1,6 @@
+// Copyright © 2022 Stephan Lachnit <stephanlachnit@debian.org>
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <map>

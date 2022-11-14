@@ -1,0 +1,8 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: SerializibleFSM
+Upstream-Contact: Stephan Lachnit <stephanlachnit@debian.org>
+Source: https://github.com/stephanlachnit/SerializibleFSM
+
+Files: subprojects/*.wrap
+Copyright: 2011 The Meson development team
+License: MIT
