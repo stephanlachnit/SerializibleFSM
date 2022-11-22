@@ -93,7 +93,7 @@ namespace SerializibleFSM {
         };
 
         // State Map of the FSM
-        StateMap<State, Event> state_map_;
+        StateMap<State, Event, Args...> state_map_;
 
         // Current State of the FSM
         State current_state_;
