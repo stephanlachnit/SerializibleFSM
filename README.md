@@ -1,81 +1,68 @@
 <!--
-Copyright © 2022 Stephan Lachnit <stephanlachnit@debian.org>
+Copyright © 2024 Stephan Lachnit <stephanlachnit@debian.org>
 SPDX-License-Identifier: MIT
 -->
 
-# SerializibleFSM
+# SerializableFSM
 
-SerializibleFSM is a templated header-only final state machine C++17 library designed to be easily
+SerializableFSM is a templated header-only final state machine C++20 library designed to be easily
 serializable for network transport. It achieves this by being templated by two enums: one for the
 possible states of the FSM, and one for the possible events the FSM may encounter.
 
 ## Simple example
 
 ```c++
-#include <iostream>
-#include "SerializableFSM.hpp"
+#include <cassert>
+#include <SerializableFSM.hpp>
 
-// Possible states
+// Possible switch states
 enum class State {
     On,
     Off,
 };
 
-// Possible events
+// Possible switch events
 enum class Event {
-    OnEvent,
-    OffEvent,
+    SwitchOn,
+    SwitchOff,
 };
 
-// Optional type forwarding
-using EventReactionMap = SerializibleFSM::EventReactionMap<State, Event>;
-using StateMap = SerializibleFSM::StateMap<State, Event>;
-using FSM = SerializibleFSM::FSM<State, Event>;
+// Typedefs for prettier code
+class Switch;
+using BaseFSM = SerializableFSM::FSM<Switch, State, Event>;
 
-// Switch is being switched on
-State switchOn() {
-    return State::On;
-}
+class Switch : public BaseFSM {
+private:
+    friend BaseFSM;
 
-// Switch is being switched off
-State switchOff() {
-    return State::Off;
-}
+    // Transition to turn switch on
+    auto switchOn(std::any /* user_data */) -> State {
+        return State::On;
+    }
+
+    // Transition to turn switch off
+    auto switchOff(std::any /* user_data */) -> State {
+        return State::Off;
+    }
+
+public:
+    explicit Switch(State initial_state) : BaseFSM(this, initial_state, BaseFSM::StateTransitionMap({
+        // All transitions from the On state go here
+        {State::On, {{Event::SwitchOff, &Switch::switchOff}}},
+        // All transitions from the Off state go here
+        {State::Off, {{Event::SwitchOn, &Switch::switchOn}}},
+    })) {}
+};
 
 int main() {
-    // Definition of state map
-    StateMap state_map {
-        {State::On, EventReactionMap {
-            {Event::OnEvent, switchOn},
-            {Event::OffEvent, switchOff},
-        }},
-        {State::Off, EventReactionMap {
-            {Event::OnEvent, switchOn},
-            {Event::OffEvent, switchOff},
-        }},
-    };
-
     // Define FSM with starting in Off state
-    FSM fsm {state_map, State::Off};
+    Switch fsm {State::Off};
 
-    // REPL loop
-    while (true) {
-        // Print current state with magic_enum
-        std::cout << "State: " << magic_enum::enum_name(fsm.GetCurrentState()) << std::endl;
+    // Turn switch on
+    fsm.react(Event::SwitchOn);
 
-        // User input of new event
-        std::string event_name;
-        std::cout << "Event: ";
-        std::cin >> event_name;
-
-        // Convert string to enum with magic_enum
-        auto event = magic_enum::enum_cast<Event>(event_name);
-
-        // React to event if valid user input
-        if (event.has_value()) {
-            fsm.React(event.value());
-        }
-    }
+    // Switch is now in On state
+    assert(fsm.getState() == State::On);
 
     return 0;
 }
@@ -88,11 +75,12 @@ For more examples, take a look at the [examples](examples/) directory.
 You can build the examples with [Meson](https://mesonbuild.com/):
 
 ```shell
-meson setup builddir -Dbuild_examples=true
-meson compile -C builddir
+meson setup build -Dexamples=true
+meson compile -C build
 ```
 
-The examples are then located in the `builddir/` directory.
+The examples are then located in `build/example`.
 
 ## License
+
 Licensed under MIT.

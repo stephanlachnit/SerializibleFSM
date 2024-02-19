@@ -1,57 +1,63 @@
 // Copyright © 2024 Stephan Lachnit <stephanlachnit@debian.org>
 // SPDX-License-Identifier: MIT
 
+#include <cstdint>
 #include <iostream>
 
 #include <magic_enum.hpp>
 #include <SerializableFSM.hpp>
 
-// Possible switch states
-enum class State {
-    On,
-    Off,
+enum class State : std::uint8_t {
+    Level0 = 0,
+    Level1 = 1,
+    Level2 = 2,
 };
 
-// Possible switch events
 enum class Event {
-    SwitchOn,
-    SwitchOff,
+    SwitchDown,
+    SwitchUp,
 };
 
-// Optional typedef for prettier code
 class Switch;
 using BaseFSM = SerializableFSM::FSM<Switch, State, Event>;
 
 class Switch : public BaseFSM {
 private:
-    // Allow base class access to private methods
     friend BaseFSM;
 
-    // Transition to turn switch on
-    auto switchOn(std::any /* user_data */) -> State {
-        return State::On;
+    // Go to higher level
+    auto switchUp(std::any /* user_data */) -> State {
+        if (getState() == State::Level0) {
+            return State::Level1;
+        }
+        return State::Level2;
     }
 
-    // Transition to turn switch off
-    auto switchOff(std::any /* user_data */) -> State {
-        return State::Off;
+    // Go to lower level
+    auto switchDown(std::any /* user_data */) -> State {
+        if (getState() == State::Level2) {
+            return State::Level1;
+        }
+        return State::Level0;
     }
 
 public:
-    // Constructor: we need to pass the "this" pointer so that the base FSM can access the transition function
     explicit Switch(State initial_state) : BaseFSM(this, initial_state, BaseFSM::StateTransitionMap({
-        // All transitions from the On state go here
-        {State::On, {{Event::SwitchOff, &Switch::switchOff}}},
-        // All transitions from the Off state go here
-        {State::Off, {{Event::SwitchOn, &Switch::switchOn}}},
-    })) {}
+        // Level0: only allow to switch up
+        {State::Level0, {{Event::SwitchUp, &Switch::switchUp}}},
+        // Level1: can go both up and down
+        {State::Level1, {{Event::SwitchDown, &Switch::switchDown},
+                         {Event::SwitchUp, &Switch::switchUp}}},
+         // Level2: can only go down
+        {State::Level2, {{Event::SwitchDown, &Switch::switchDown}}},
+        })) {}
 };
 
 int main() {
     // Define FSM with starting in Off state
-    Switch switch_fsm {State::Off};
+    Switch switch_fsm {State::Level0};
 
-    std::cout << "Possible events: SwitchOn, SwitchOff" << std::endl;
+    std::cout << "Possible events: SwitchUp, SwitchDown" << std::endl;
 
     // REPL loop
     while (true) {

@@ -1,105 +1,90 @@
-// Copyright © 2022 Stephan Lachnit <stephanlachnit@debian.org>
+// Copyright © 2024 Stephan Lachnit <stephanlachnit@debian.org>
 // SPDX-License-Identifier: MIT
 
 #pragma once
 
+#include <any>
+#include <exception>
+#include <format>
 #include <map>
 #include <string>
-#include "magic_enum.hpp"
+#include <type_traits>
 
-namespace SerializibleFSM {
+#include <magic_enum.hpp>
 
-    // Reaction to certain event, returns State, takes any amount of args
-    template<typename State, typename... Args>
-    using EventReaction = State(Args...);
-
-    // Maps event to reaction function
-    template<typename State, typename Event, typename... Args>
-    using EventReactionMap = std::map<Event, EventReaction<State, Args...>*>;
-
-    // Maps states to event reaction maps
-    template<typename State, typename Event, typename... Args>
-    using StateMap = std::map<State, EventReactionMap<State, Event, Args...>>;
-
-    // Generic error class thrown when encountering an error during React()
-    class ReactionError : public std::exception {
+namespace SerializableFSM {
+    /** Base exception for all exceptions in this library */
+    class Exception : public std::exception {
     public:
-        const char* what() const noexcept override { return error_message_.c_str(); }
+        [[nodiscard]] const char* what() const noexcept override { return error_message_.c_str(); }
     protected:
-        ReactionError() = default;
+        Exception() = default;
         std::string error_message_;
     };
 
-    // Error thrown when state not in map
-    template<typename State>
-    class StateHasNoReactionsError : public ReactionError {
-    public:
-        explicit StateHasNoReactionsError(State state) {
-            error_message_ = "State ";
-            error_message_ += magic_enum::enum_name(state);
-            error_message_ += " has no reactions";
-        }
-    };
-
-    // Error thrown when event not in map
-    template<typename State, typename Event>
-    class StateHasNoReactionToEventError : public ReactionError {
-    public:
-        explicit StateHasNoReactionToEventError(State state, Event event) {
-            error_message_ = "State ";
-            error_message_ += magic_enum::enum_name(state);
-            error_message_ += " has no reaction to event ";
-            error_message_ += magic_enum::enum_name(event);
-        }
-    };
-
-    // FSM class taking state and event enums
-    template<typename State, typename Event, typename... Args>
+    template<class Class, typename State, typename Event>
+    requires std::is_enum_v<State> && std::is_enum_v<Event>
     class FSM {
     public:
-        FSM(StateMap<State, Event, Args...> state_map, State initial_state)
-         :  state_map_(std::move(state_map)),
-            current_state_(initial_state),
-            initial_state_(initial_state)
-        {};
+        /** Function pointer for a transition function: takes any object, returns new State */
+        using TransitionFunction = State(Class::*)(std::any);
 
-        // Reacts to event as given in state_map
-        void React(Event event, Args... args) {
-            if (state_map_.find(current_state_) != state_map_.end()) {
-                if (state_map_[current_state_].find(event) != state_map_[current_state_].end()) {
-                    Transit(state_map_[current_state_][event](args...));
-                } else {
-                    throw StateHasNoReactionToEventError(current_state_, event);
-                }
-            } else {
-                throw StateHasNoReactionsError(current_state_);
+        /** Maps event enums to a transition function */
+        using TransitionMap = std::map<Event, TransitionFunction>;
+
+        /** Maps state to transition maps for that state */
+        using StateTransitionMap = std::map<State, TransitionMap>;
+
+        /** Exception if a state has no transitions at all */
+        class StateHasNoTransitionsError : public Exception {
+        public:
+            explicit StateHasNoTransitionsError(State state) {
+                error_message_ = std::format("State {} has no transitions", magic_enum::enum_name(state));
             }
         };
 
-        // Returns the current state
-        inline State GetCurrentState() const {
-            return current_state_;
+        /** Exception if a state has no transition for given event */
+        class StateHasNoTransitionForEventError : public Exception {
+        public:
+            explicit StateHasNoTransitionForEventError(State state, Event event) {
+                error_message_ = std::format("State {} has no transition for event {}",
+                                             magic_enum::enum_name(state), magic_enum::enum_name(event));
+            }
         };
 
-        // Resets to initial state
-        inline void Reset() {
-            Transit(initial_state_);
-        };
+    public:
+        FSM(Class* fsm_class, State initial_state, StateTransitionMap state_transition_map)
+            : fsm_class_(fsm_class), state_(initial_state), initial_state_(initial_state),
+              state_transition_map_(std::move(state_transition_map)) {}
+
+        [[nodiscard]] constexpr State getState() const { return state_; }
+
+        constexpr void reset() { state_ = initial_state_; }
+
+        void react(Event event, std::any user_data = {}) {
+            // Check that current state has transitions
+            const auto transition_map_it = state_transition_map_.find(state_);
+            if(transition_map_it != state_transition_map_.end()) [[likely]] {
+                // Check that transition is allowed
+                const auto transition_map = transition_map_it->second;
+                const auto transition_function_it = transition_map.find(event);
+                if(transition_function_it != transition_map.end()) [[likely]] {
+                    // Execute transition function
+                    const auto transition_function = transition_function_it->second;
+                    state_ = (fsm_class_->*transition_function)(std::move(user_data));
+                } else {
+                    throw StateHasNoTransitionForEventError(state_, event);
+                }
+            } else {
+                throw StateHasNoTransitionsError(state_);
+            }
+        }
 
     private:
-        // Switched the current state to new state (no reaction)
-        inline void Transit(State new_state) {
-            current_state_ = new_state;
-        };
-
-        // State Map of the FSM
-        StateMap<State, Event, Args...> state_map_;
-
-        // Current State of the FSM
-        State current_state_;
-
-        // Initial State of the FSM used in Reset()
-        State initial_state_;
+        Class* fsm_class_;
+        State state_;
+        const State initial_state_;
+        const StateTransitionMap state_transition_map_;
     };
 
 }
